@@ -1,14 +1,13 @@
-use std::{fmt::Debug, mem, time::Duration};
+use std::{fmt::Debug, time::Duration};
 
-use futures::lock::Mutex;
+use parking_lot::{Mutex, MutexGuard};
+use take_mut::take;
 use tokio::time::sleep;
 
 #[derive(Debug, Clone)]
 pub enum State<T> {
     Change(T /* current */, T /* old */),
     NoChange(T),
-
-    _Intermediate,
 }
 
 impl<T> State<T> {
@@ -16,24 +15,22 @@ impl<T> State<T> {
         match self {
             State::Change(current, _) => current,
             State::NoChange(current) => current,
-            State::_Intermediate => unreachable!(),
         }
     }
 }
 
 pub type Effect<T> = fn(&T, &T);
-pub type SignalLock<T> = Mutex<Signal<T>>;
 
 #[derive(Debug)]
 pub struct Signal<T> {
-    state: State<T>,
+    state: Mutex<State<T>>,
     effect: Effect<T>,
 }
 
 impl<T: Default> Default for Signal<T> {
     fn default() -> Self {
         Self {
-            state: State::NoChange(Default::default()),
+            state: Mutex::new(State::NoChange(Default::default())),
             effect: |_, _| (),
         }
     }
@@ -42,55 +39,56 @@ impl<T: Default> Default for Signal<T> {
 impl<T: Debug> Signal<T> {
     pub fn new(value: T) -> Self {
         Signal {
-            state: State::NoChange(value),
+            state: Mutex::new(State::NoChange(value)),
             effect: |_, _| (),
         }
     }
 
     pub fn effect(value: T, f: Effect<T>) -> Self {
         Signal {
-            state: State::NoChange(value),
+            state: Mutex::new(State::NoChange(value)),
             effect: f,
         }
     }
 
-    pub async fn change(&mut self, value: T) {
-        let tmp = mem::replace(&mut self.state, State::_Intermediate);
-        self.state = match tmp {
-            State::Change(current, _) => {
-                (self.effect)(&value, &current);
-                State::Change(value, current)
+    pub async fn change(&self, value: T) {
+        let mut state = self.state.lock();
+        take(&mut *state, |state| match state {
+            State::Change(old, _) => {
+                (self.effect)(&value, &old);
+                State::Change(value, old)
             }
-            State::NoChange(current) => {
-                (self.effect)(&value, &current);
-                State::Change(value, current)
+            State::NoChange(old) => {
+                (self.effect)(&value, &old);
+                State::Change(value, old)
             }
-            State::_Intermediate => unreachable!(),
-        };
+        });
+        MutexGuard::unlock_fair(state);
     }
 
     pub async fn bind<'a, S: Debug>(
-        this: &Mutex<Self>,
+        &self,
         right: &'a mut Signal<S>,
         f: fn(&T) -> S,
     ) -> &'a mut Signal<S> {
         dbg!("bind");
         loop {
-            let mut this = this.lock().await;
-            dbg!("State: {:?}", &this.state);
-            sleep(Duration::from_millis(200)).await;
-            match &this.state {
+            sleep(Duration::from_millis(10)).await;
+            let mut state = self.state.lock();
+            match &*state {
                 State::Change(current, _) => {
-                    dbg!("State: {:?}", &this.state);
-                    right.change(f(current)).await;
-                    let tmp = mem::replace(&mut this.state, State::_Intermediate);
-                    this.state = State::NoChange(tmp.unwrap());
-                    return right;
-                }
-                State::NoChange(_) => {
+                    right.change(f(&current)).await;
+                    take(&mut *state, |state| match state {
+                        State::Change(current, _) => State::NoChange(current),
+                        State::NoChange(_) => unreachable!(),
+                    });
+                    MutexGuard::unlock_fair(state);
                     continue;
                 }
-                State::_Intermediate => unreachable!(),
+                State::NoChange(_) => {
+                    MutexGuard::unlock_fair(state);
+                    continue;
+                }
             }
         }
     }

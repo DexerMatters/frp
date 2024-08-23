@@ -20,5 +20,9 @@ async fn run(ged: Arc<InputSignals>) {
     let mut print = Signal::effect("".to_string(), |new, _| {
         println!("Effect: {}", new);
     });
-    Signal::bind(&ged.mouse.name, &mut print, |name| name.clone()).await;
+
+    ged.mouse
+        .x
+        .bind(&mut print, |x| format!("Mouse X: {}", x))
+        .await;
 }

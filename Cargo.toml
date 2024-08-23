@@ -1,0 +1,13 @@
+[package]
+name = "frp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "0.7.5"
+futures = "0.3"
+lazy_static = "1.5.0"
+parking_lot = "0.12.3"
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5.2", features = ["fs"] } 

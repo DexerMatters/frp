@@ -1,10 +1,13 @@
 use std::sync::Arc;
 
-use axum::{extract::State, handler::Handler, routing::post, Json, Router, ServiceExt};
+use axum::{debug_handler, extract::State, routing::post, Json, Router};
 use futures::join;
 use tower_http::services::ServeDir;
 
-use crate::ged::{InputSignals, MouseEvent};
+use crate::{
+    ged::{InputSignals, MouseEvent},
+    signal::Signal,
+};
 
 pub fn init_router(inputs: Arc<InputSignals>) -> Router {
     Router::new()
@@ -13,17 +16,14 @@ pub fn init_router(inputs: Arc<InputSignals>) -> Router {
         .with_state(inputs)
 }
 
+#[debug_handler]
 async fn mouse_event(signals: State<Arc<InputSignals>>, Json(event_body): Json<MouseEvent>) {
     let mouse = &signals.mouse;
-    let mut x = mouse.x.lock().await;
-    let mut y = mouse.y.lock().await;
-    let mut button = mouse.button.lock().await;
-    let mut name = mouse.name.lock().await;
     dbg!("Mouse Event");
     join!(
-        x.change(event_body.x),
-        y.change(event_body.y),
-        button.change(event_body.button),
-        name.change(event_body.name),
+        Signal::change(&mouse.x, event_body.x),
+        Signal::change(&mouse.y, event_body.y),
+        Signal::change(&mouse.button, event_body.button),
+        Signal::change(&mouse.name, event_body.name),
     );
 }

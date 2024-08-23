@@ -1,6 +1,6 @@
 use std::{fmt::Debug, mem, time::Duration};
 
-use futures::lock::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use tokio::time::sleep;
 
 #[derive(Debug, Clone)]
@@ -40,52 +40,53 @@ impl<T: Default> Default for Signal<T> {
 }
 
 impl<T: Debug> Signal<T> {
-    pub fn new(value: T) -> Self {
-        Signal {
+    pub fn new(value: T) -> SignalLock<T> {
+        Mutex::new(Signal {
             state: State::NoChange(value),
             effect: |_, _| (),
-        }
+        })
     }
 
-    pub fn effect(value: T, f: Effect<T>) -> Self {
-        Signal {
+    pub fn effect(value: T, f: Effect<T>) -> SignalLock<T> {
+        Mutex::new(Signal {
             state: State::NoChange(value),
             effect: f,
-        }
+        })
     }
 
-    pub async fn change(&mut self, value: T) {
-        let tmp = mem::replace(&mut self.state, State::_Intermediate);
-        self.state = match tmp {
+    pub async fn change(this: &Mutex<Self>, value: T) {
+        let mut this = this.lock();
+        let tmp = mem::replace(&mut this.state, State::_Intermediate);
+        this.state = match tmp {
             State::Change(current, _) => {
-                (self.effect)(&value, &current);
+                (this.effect)(&value, &current);
                 State::Change(value, current)
             }
             State::NoChange(current) => {
-                (self.effect)(&value, &current);
+                (this.effect)(&value, &current);
                 State::Change(value, current)
             }
             State::_Intermediate => unreachable!(),
         };
+        MutexGuard::unlock_fair(this);
     }
 
     pub async fn bind<'a, S: Debug>(
-        this: &Mutex<Self>,
-        right: &'a mut Signal<S>,
+        this: &SignalLock<T>,
+        right: &'a mut SignalLock<S>,
         f: fn(&T) -> S,
-    ) -> &'a mut Signal<S> {
+    ) -> &'a mut SignalLock<S> {
         dbg!("bind");
         loop {
-            let mut this = this.lock().await;
-            dbg!("State: {:?}", &this.state);
+            let mut this = this.lock();
             sleep(Duration::from_millis(200)).await;
             match &this.state {
                 State::Change(current, _) => {
-                    dbg!("State: {:?}", &this.state);
-                    right.change(f(current)).await;
+                    println!("State: {:?}", &this.state);
+                    Signal::change(right, f(current)).await;
                     let tmp = mem::replace(&mut this.state, State::_Intermediate);
                     this.state = State::NoChange(tmp.unwrap());
-                    return right;
+                    continue;
                 }
                 State::NoChange(_) => {
                     continue;

@@ -2,7 +2,7 @@ use std::{future::IntoFuture, sync::Arc};
 
 use futures::join;
 use ged::InputSignals;
-use signal::Signal;
+use signal::{Signal, Signalable};
 
 pub mod api;
 pub mod ged;
@@ -17,13 +17,13 @@ async fn main() {
 }
 
 async fn run(ged: Arc<InputSignals>) {
-    let print = Signal::effect("".to_string(), |new, _| {
-        println!("Effect: {}", new);
-    });
-
-    let aux = Signal::new(0);
-
-    let aux2 = Signal::new((0, 0));
-
-    let _ = join!(ged.mouse.x.map_(&aux, |x| x / 2), aux.print());
+    ged.mouse
+        .x
+        .clone()
+        .map::<Signal<_>, _>(|x| x / 2)
+        .map::<Signal<_>, _>(|x| x.to_string())
+        .with_effect(|new, old| {
+            println!("Move {} -> {}", old, new);
+            true
+        });
 }

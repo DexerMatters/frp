@@ -1,11 +1,7 @@
-use std::{
-    fmt::{Debug, Display},
-    time::Duration,
-};
+use std::{fmt::Debug, sync::Arc, thread::sleep, time::Duration};
 
 use parking_lot::{Mutex, MutexGuard};
 use take_mut::take;
-use tokio::time::sleep;
 
 #[derive(Debug, Clone)]
 pub enum State<T> {
@@ -20,91 +16,120 @@ impl<T> State<T> {
             State::NoChange(current) => current,
         }
     }
+    pub fn unwrap_old(self) -> T {
+        match self {
+            State::Change(_, old) => old,
+            State::NoChange(old) => old,
+        }
+    }
 }
 
-pub type Effect<T> = fn(&T, &T);
+pub type Effect<T> = fn(&T, &T) -> bool;
 
 #[derive(Debug)]
 pub struct Signal<T> {
     state: Mutex<State<T>>,
-    effect: Effect<T>,
+    effect: Mutex<Effect<T>>,
 }
 
+pub type SignalArc<T> = Arc<Signal<T>>;
+
+/**
+ * Implement the Default trait for Signal<T> where T is a type that implements the Default trait.
+ */
 impl<T: Default> Default for Signal<T> {
     fn default() -> Self {
         Self {
             state: Mutex::new(State::NoChange(Default::default())),
-            effect: |_, _| (),
+            effect: Mutex::new(|_, _| true),
         }
     }
 }
 
-impl<T: Debug> Signal<T> {
-    pub fn new(value: T) -> Self {
+/**
+ * Implement the Signalable trait for Signal<T> where T is a type that implements the Debug, Default, Send, and 'static traits.
+ */
+impl<T: Debug + Default + Send + 'static> Signalable<T> for Signal<T> {
+    fn new(value: T) -> Self {
         Signal {
             state: Mutex::new(State::NoChange(value)),
-            effect: |_, _| (),
+            effect: Mutex::new(|_, _| true),
         }
     }
 
-    pub fn effect(value: T, f: Effect<T>) -> Self {
+    fn from_effect(value: T, f: Effect<T>) -> Self {
         Signal {
             state: Mutex::new(State::NoChange(value)),
-            effect: f,
+            effect: Mutex::new(f),
         }
     }
 
-    pub async fn change(&self, value: T) {
+    fn replace(&self, value: T) -> bool {
         let mut state = self.state.lock();
+        let mut re = true;
         take(&mut *state, |state| match state {
             State::Change(old, _) => {
-                (self.effect)(&value, &old);
+                re = self.effect.lock()(&value, &old);
                 State::Change(value, old)
             }
             State::NoChange(old) => {
-                (self.effect)(&value, &old);
+                re = self.effect.lock()(&value, &old);
                 State::Change(value, old)
             }
         });
         MutexGuard::unlock_fair(state);
+        re
     }
 
-    pub async fn map_<'a, S: Debug>(&self, right: &'a Signal<S>, f: fn(&T) -> S) {
-        dbg!("bind");
-        loop {
-            sleep(Duration::from_millis(10)).await;
-            let mut state = self.state.lock();
-            match &*state {
-                State::Change(current, _) => {
-                    right.change(f(&current)).await;
-                    take(&mut *state, |state| match state {
-                        State::Change(current, _) => State::NoChange(current),
-                        State::NoChange(_) => unreachable!(),
-                    });
-                    MutexGuard::unlock_fair(state);
-                    continue;
+    fn effect(&self) -> Effect<T> {
+        *self.effect.lock()
+    }
+
+    fn map<S, U>(self: Arc<Self>, f: fn(&T) -> U) -> Arc<S>
+    where
+        U: Default + 'static,
+        S: Signalable<U> + Send + Sync + 'static,
+    {
+        let signal = Arc::new(S::default());
+        let ret = signal.clone();
+        let this = self.clone();
+        tokio::spawn(async move {
+            loop {
+                let mut will_break = false;
+                let mut state = this.state.lock();
+                sleep(Duration::from_millis(10));
+                take(&mut *state, |state| match state {
+                    State::Change(current, _) => {
+                        if !signal.replace(f(&current)) {
+                            will_break = true;
+                        };
+                        State::NoChange(current)
+                    }
+                    State::NoChange(current) => State::NoChange(current),
+                });
+                if will_break {
+                    break;
                 }
-                State::NoChange(_) => {
-                    MutexGuard::unlock_fair(state);
-                    continue;
-                }
+                MutexGuard::unlock_fair(state);
             }
-        }
+        });
+        ret
     }
 
-    pub async fn map<S: Default + Debug>(&self, f: fn(&T) -> S) -> Signal<S> {
-        println!("map");
-        let right = Signal::<S>::default();
-        self.map_(&right, f).await;
-        right
+    fn with_effect(self: Arc<Self>, f: Effect<T>) -> Arc<Self> {
+        *self.effect.lock() = f;
+        self
     }
 }
 
-impl<T: Display + Debug> Signal<T> {
-    pub async fn print(&self) {
-        let mut print = Signal::effect("".to_string(), |new, _| {
-            println!("{}", new);
-        });
-        self.map_(&mut print, |x| format!("{:?}", x)).await;
-    }
+pub trait Signalable<T>: Default {
+    fn new(value: T) -> Self;
+    fn from_effect(value: T, f: Effect<T>) -> Self;
+    fn replace(&self, value: T) -> bool;
+    fn effect(&self) -> Effect<T>;
+    fn with_effect(self: Arc<Self>, f: Effect<T>) -> Arc<Self>;
+    fn map<S, U>(self: Arc<Self>, f: fn(&T) -> U) -> Arc<S>
+    where
+        U: Default + 'static,
+        S: Signalable<U> + Send + Sync + 'static;
 }

@@ -1,4 +1,7 @@
-use std::{fmt::Debug, time::Duration};
+use std::{
+    fmt::{Debug, Display},
+    time::Duration,
+};
 
 use parking_lot::{Mutex, MutexGuard};
 use take_mut::take;
@@ -66,11 +69,7 @@ impl<T: Debug> Signal<T> {
         MutexGuard::unlock_fair(state);
     }
 
-    pub async fn bind<'a, S: Debug>(
-        &self,
-        right: &'a mut Signal<S>,
-        f: fn(&T) -> S,
-    ) -> &'a mut Signal<S> {
+    pub async fn map_<'a, S: Debug>(&self, right: &'a Signal<S>, f: fn(&T) -> S) {
         dbg!("bind");
         loop {
             sleep(Duration::from_millis(10)).await;
@@ -91,5 +90,21 @@ impl<T: Debug> Signal<T> {
                 }
             }
         }
+    }
+
+    pub async fn map<S: Default + Debug>(&self, f: fn(&T) -> S) -> Signal<S> {
+        println!("map");
+        let right = Signal::<S>::default();
+        self.map_(&right, f).await;
+        right
+    }
+}
+
+impl<T: Display + Debug> Signal<T> {
+    pub async fn print(&self) {
+        let mut print = Signal::effect("".to_string(), |new, _| {
+            println!("{}", new);
+        });
+        self.map_(&mut print, |x| format!("{:?}", x)).await;
     }
 }

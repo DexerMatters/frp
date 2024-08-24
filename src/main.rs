@@ -17,12 +17,13 @@ async fn main() {
 }
 
 async fn run(ged: Arc<InputSignals>) {
-    let mut print = Signal::effect("".to_string(), |new, _| {
+    let print = Signal::effect("".to_string(), |new, _| {
         println!("Effect: {}", new);
     });
 
-    ged.mouse
-        .x
-        .bind(&mut print, |x| format!("Mouse X: {}", x))
-        .await;
+    let aux = Signal::new(0);
+
+    let aux2 = Signal::new((0, 0));
+
+    let _ = join!(ged.mouse.x.map_(&aux, |x| x / 2), aux.print());
 }

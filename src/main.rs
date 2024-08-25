@@ -2,11 +2,11 @@ use std::{future::IntoFuture, sync::Arc};
 
 use futures::join;
 use ged::InputSignals;
-use signal::{Signal, Signalable};
 
 pub mod api;
 pub mod ged;
 pub mod signal;
+pub mod signals;
 
 #[tokio::main]
 async fn main() {
@@ -17,13 +17,18 @@ async fn main() {
 }
 
 async fn run(ged: Arc<InputSignals>) {
-    ged.mouse
-        .x
-        .clone()
-        .map::<Signal<_>, _>(|x| x / 2)
-        .map::<Signal<_>, _>(|x| x.to_string())
-        .with_effect(|new, old| {
-            println!("Move {} -> {}", old, new);
+    (ged.mouse.x.clone())
+        // ^ signal of the x coordinate of the mouse
+        .with(ged.mouse.y.clone())
+        // ^ Bind the signal of the y coordinate of the mouse
+        .with(ged.mouse.name.clone())
+        // ^ Bind the signal of the name of the mouse event
+        .with_guard(|(_, name)| *name == "mousedown")
+        // ^ Filter the signal except for the mousedown event
+        .map(|(p, _)| *p)
+        // ^ Extract the x and y coordinates from the signal
+        .with_effect(|(x, y), _| {
+            println!("Mouse Down at ({}, {})", x, y);
             true
         });
 }

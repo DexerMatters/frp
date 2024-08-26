@@ -2,7 +2,7 @@ use std::{future::IntoFuture, sync::Arc};
 
 use futures::join;
 use ged::InputSignals;
-use signals::pure;
+use signal::Signal;
 
 pub mod api;
 pub mod ged;
@@ -17,14 +17,13 @@ async fn main() {
     let _ = join!(run(ged.clone()), axum::serve(listener, app).into_future());
 }
 
-async fn run(ged: Arc<InputSignals>) {
-    pure(|x: i32| move |y: i32| move |name: String| (x, y, name))
-        .apply(ged.mouse.x.clone())
-        .apply(ged.mouse.y.clone())
-        .apply(ged.mouse.name.clone())
-        .with_guard(|(_, _, name), _| name == "mousedown")
-        .map(|(x, y, _)| (x, y))
-        .with_effect(|(x, y), _| {
-            println!("Mouse moved to ({}, {})", x, y);
+async fn run(g: Arc<InputSignals>) {
+    Signal::new(|x: i32| move |y: i32| move |_: String| format!("Output: {}, {}", x, y))
+        .apply(g.mouse.x.clone())
+        .apply(g.mouse.y.clone())
+        .apply((g.mouse.name.clone()).effect(|name| name.unwrap() == "mousedown"))
+        .effect(|text| {
+            println!("{}", text.unwrap());
+            true
         });
 }

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::signal::SignalArc;
+use crate::signal::SignalRef;
 
 #[derive(Deserialize, Debug)]
 pub struct MouseEvent {
@@ -16,15 +16,15 @@ pub struct KeyboardEvent {
 
 #[derive(Default)]
 pub struct MouseSignals {
-    pub x: SignalArc<i32>,
-    pub y: SignalArc<i32>,
-    pub button: SignalArc<i32>,
-    pub name: SignalArc<String>,
+    pub x: SignalRef<i32>,
+    pub y: SignalRef<i32>,
+    pub button: SignalRef<i32>,
+    pub name: SignalRef<String>,
 }
 
 #[derive(Default)]
 pub struct KeyboardSignals {
-    pub key: SignalArc<String>,
+    pub key: SignalRef<String>,
 }
 
 #[derive(Default)]

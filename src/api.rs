@@ -14,8 +14,7 @@ pub fn init_router(inputs: Arc<InputSignals>) -> Router {
 
 async fn mouse_event(signals: State<Arc<InputSignals>>, Json(event_body): Json<MouseEvent>) {
     let mouse = &signals.mouse;
-    mouse.x.replace(event_body.x);
-    mouse.y.replace(event_body.y);
-    mouse.button.replace(event_body.button);
-    mouse.name.replace(event_body.name);
+    (mouse.x.clone()).with_diff_guard().replace(event_body.x);
+    (mouse.y.clone()).with_diff_guard().replace(event_body.y);
+    (mouse.name.clone().with_diff_guard()).replace(event_body.name);
 }

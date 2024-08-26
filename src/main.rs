@@ -2,6 +2,7 @@ use std::{future::IntoFuture, sync::Arc};
 
 use futures::join;
 use ged::InputSignals;
+use signals::pure;
 
 pub mod api;
 pub mod ged;
@@ -17,18 +18,13 @@ async fn main() {
 }
 
 async fn run(ged: Arc<InputSignals>) {
-    (ged.mouse.x.clone())
-        // ^ signal of the x coordinate of the mouse
-        .with(ged.mouse.y.clone())
-        // ^ Bind the signal of the y coordinate of the mouse
-        .with(ged.mouse.name.clone())
-        // ^ Bind the signal of the name of the mouse event
-        .with_guard(|(_, name)| *name == "mousedown")
-        // ^ Filter the signal except for the mousedown event
-        .map(|(p, _)| *p)
-        // ^ Extract the x and y coordinates from the signal
+    pure(|x: i32| move |y: i32| move |name: String| (x, y, name))
+        .apply(ged.mouse.x.clone())
+        .apply(ged.mouse.y.clone())
+        .apply(ged.mouse.name.clone())
+        .with_guard(|(_, _, name), _| name == "mousedown")
+        .map(|(x, y, _)| (x, y))
         .with_effect(|(x, y), _| {
-            println!("Mouse Down at ({}, {})", x, y);
-            true
+            println!("Mouse moved to ({}, {})", x, y);
         });
 }

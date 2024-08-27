@@ -18,12 +18,19 @@ async fn main() {
 }
 
 async fn run(g: Arc<InputSignals>) {
-    Signal::new(|x: i32| move |y: i32| move |_: String| format!("Output: {}, {}", x, y))
-        .apply(g.mouse.x.clone())
-        .apply(g.mouse.y.clone())
-        .apply((g.mouse.name.clone()).effect(|name| name.unwrap() == "mousedown"))
-        .effect(|text| {
-            println!("{}", text.unwrap());
+    // Signal::new(|x: i32| move |y: i32| move |_: String| format!("Output: {}, {}", x, y))
+    //     .apply(g.mouse.x.clone())
+    //     .apply(g.mouse.y.clone())
+    //     .apply(g.mouse.name.clone())
+    //     .effect(|text, _| {
+    //         println!("{}", text);
+    //         true
+    //     });
+
+    Signal::new((g.mouse.x.clone().strict(), g.mouse.y.clone().strict()))
+        .join()
+        .effect(|(x, y), _| {
+            println!("Output: {}, {}", x, y);
             true
         });
 }

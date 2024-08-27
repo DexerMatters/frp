@@ -152,7 +152,9 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "futures",
+ "impl_variadics",
  "parking_lot",
+ "paste",
  "serde",
  "take_mut",
  "tokio",
@@ -347,6 +349,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "impl_variadics"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "50b0f50ee54d6d50267e1ac9989e7042da411db999591afc049b4a7fc294a84c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -460,6 +473,12 @@ dependencies = [
  "smallvec",
  "windows-targets",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "percent-encoding"
